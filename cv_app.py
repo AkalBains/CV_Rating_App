@@ -91,5 +91,4 @@ if uploaded_file and role:
                 st.success("Rating complete!")
                 st.markdown(result)
     else:
-
-
+        st.error("Unsupported file format or failed to extract text.")
