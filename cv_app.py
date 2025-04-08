@@ -5,6 +5,7 @@ import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
 
+PASSWORD = st.secrets["ACCESS_PASSWORD"]
 
 # ✅ Secure API key (or paste directly if not using secrets)
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
