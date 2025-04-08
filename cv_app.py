@@ -47,7 +47,7 @@ There are 15 categories. For each category, provide:
 Return your response as valid JSON in this format:
 {{
   "Category Name": {{
-    "rating_numeric": 1-15,
+    "rating_numeric": 1-5,
     "rating_word": "Exceptional / Strong / Sound / Moderate / etc.",
     "justification": "..."
   }},
@@ -103,4 +103,5 @@ if uploaded_file and role:
                     st.code(result)
     else:
         st.error("Unsupported file format or failed to extract text.")
+
 
