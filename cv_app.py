@@ -5,9 +5,10 @@ import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
 
+# 🔐 Set your password here (from secrets)
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 
-# ✅ Secure API key (or paste directly if not using secrets)
+# ✅ Secure API key (from secrets)
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # Load the rubric from file
@@ -32,18 +33,23 @@ def extract_text(file):
         return None
 
 # Call GPT to rate the CV
-def rate_cv(cv_text, rubric_text):
+def rate_cv(cv_text, rubric_text, role):
     messages = [
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": f"""
-Please rate the following CV using the rubric provided above. There are six categories.
+Please rate the following CV using the rubric provided above, in the context of the role: "{role}".
 
-Return the result as valid JSON in the following format:
+There are 15 categories. For each category, provide:
+- A numeric rating (1–10)
+- A word-based rating (e.g., Excellent / Good / Fair / Poor)
+- A short justification
+
+Return your response as valid JSON in this format:
 {{
   "Category Name": {{
-    "rating_numeric": 1-10,
-    "rating_word": "Excellent / Good / Fair / Poor / etc.",
-    "justification": "A short explanation..."
+    "rating_numeric": 1-15,
+    "rating_word": "Exceptional / Strong / Sound / Moderate / etc.",
+    "justification": "..."
   }},
   ...
 }}
@@ -72,18 +78,22 @@ if password != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
+# Role input
+role = st.text_input("🔍 What role is this CV being considered for?")
+
 # File upload and CV rating
 st.write("Upload a CV file (.txt, .pdf, or .docx) to get it rated across 15 categories using your custom rubric.")
 uploaded_file = st.file_uploader("Upload CV", type=["txt", "pdf", "docx"])
 
-if uploaded_file:
+# Only proceed if both a file and a role have been provided
+if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
 
     if cv_text:
         if st.button("Rate CV"):
             with st.spinner("Rating in progress..."):
                 rubric = load_rubric()
-                result = rate_cv(cv_text, rubric)
+                result = rate_cv(cv_text, rubric, role)
                 try:
                     parsed = json.loads(result)
                     st.success("Rating complete!")
