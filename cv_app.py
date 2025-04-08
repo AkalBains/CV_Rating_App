@@ -94,13 +94,8 @@ if uploaded_file and role:
             with st.spinner("Rating in progress..."):
                 rubric = load_rubric()
                 result = rate_cv(cv_text, rubric, role)
-                try:
-                    parsed = json.loads(result)
-                    st.success("Rating complete!")
-                    st.json(parsed)
-                except Exception as e:
-                    st.error("Something went wrong. Output could not be parsed.")
-                    st.code(result)
+                 st.success("Rating complete!")
+                st.markdown(result)
     else:
         st.error("Unsupported file format or failed to extract text.")
 
