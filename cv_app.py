@@ -83,13 +83,20 @@ if uploaded_file and role:
 
     if cv_text:
         st.subheader("📝 Consultant Input")
-        st.write("Use the sliders below to manually rate consultant-assessed categories.")
+        st.write("Select the appropriate rating for each category:")
 
         consultant_scores = {
-            "Presentation": st.slider("Presentation", 1, 5),
-            "Commercial Awareness": st.slider("Commercial Awareness", 1, 5),
-            "Culture Fit": st.slider("Culture Fit", 1, 5),
-            "Experience Relevance": st.slider("Experience Relevance", 1, 5)
+            "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
+            "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
+            "Industry Experience": st.selectbox("Industry Experience", ["low", "moderate", "sound", "strong"]),
+            "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
+            "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
+            "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
+            "Internal Career Progression": st.selectbox("Internal Career Progression", ["low", "moderate", "strong", "exceptional"]),
+            "Recent Career Progression": st.selectbox("Recent Career Progression", ["low", "moderate", "strong", "exceptional"]),
+            "Career Moves Facilitated by Prior Colleagues": st.selectbox("Career Moves Facilitated by Prior Colleagues", ["none", "single instance", "thematic"]),
+            "Regretted Career Choices": st.selectbox("Regretted Career Choices", ["none", "single instance", "thematic"]),
+            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
         }
 
         if st.button("Rate CV"):
@@ -105,11 +112,8 @@ if uploaded_file and role:
 
                 # Consultant Scores
                 st.markdown("### 👤 Consultant Ratings")
-                for category, score in consultant_scores.items():
-                    st.markdown(f"- **{category}**: {score} / 5")
-
-                # Average Consultant Score
-                avg_consultant = sum(consultant_scores.values()) / len(consultant_scores)
-                st.markdown(f"**Consultant Score Average:** {avg_consultant:.1f} / 5")
+                for category, rating in consultant_scores.items():
+                    st.markdown(f"- **{category}**: {rating.capitalize()}")
     else:
         st.error("Unsupported file format or failed to extract text.")
+
