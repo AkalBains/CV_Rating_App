@@ -1,7 +1,5 @@
 import streamlit as st
 import openai
-import streamlit as st
-import openai
 import json
 import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
@@ -76,7 +74,7 @@ if password != PASSWORD:
 role = st.text_input("🔍 What role is this CV being considered for?")
 
 # File upload and CV rating
-st.write("Upload a CV file (.txt, .pdf, or .docx) to get it rated across 15 categories using your custom rubric.")
+st.write("Upload a CV file (.txt, .pdf, or .docx) to get it rated across 6 categories using your custom rubric.")
 uploaded_file = st.file_uploader("Upload CV", type=["txt", "pdf", "docx"])
 
 # Only proceed if both a file and a role have been provided
@@ -84,11 +82,34 @@ if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
 
     if cv_text:
+        st.subheader("📝 Consultant Input")
+        st.write("Use the sliders below to manually rate consultant-assessed categories.")
+
+        consultant_scores = {
+            "Presentation": st.slider("Presentation", 1, 5),
+            "Commercial Awareness": st.slider("Commercial Awareness", 1, 5),
+            "Culture Fit": st.slider("Culture Fit", 1, 5),
+            "Experience Relevance": st.slider("Experience Relevance", 1, 5)
+        }
+
         if st.button("Rate CV"):
             with st.spinner("Rating in progress..."):
                 rubric = load_rubric()
                 result = rate_cv(cv_text, rubric, role)
+
                 st.success("Rating complete!")
+
+                # GPT Output
+                st.markdown("### 🤖 GPT Rating")
                 st.markdown(result)
+
+                # Consultant Scores
+                st.markdown("### 👤 Consultant Ratings")
+                for category, score in consultant_scores.items():
+                    st.markdown(f"- **{category}**: {score} / 5")
+
+                # Average Consultant Score
+                avg_consultant = sum(consultant_scores.values()) / len(consultant_scores)
+                st.markdown(f"**Consultant Score Average:** {avg_consultant:.1f} / 5")
     else:
         st.error("Unsupported file format or failed to extract text.")
