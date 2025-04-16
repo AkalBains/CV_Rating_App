@@ -44,12 +44,12 @@ There are six categories. For each one, provide:
 - A short justification
 
 Score the CV according to:
-- industry experience,
-- within firm alignment,
-- benchmark exposure,
-- range of experience,
 - education,
-- length of stay at firms.
+- industry experience,
+- range of experience,
+- benchmark of career exposure,
+- average length of stay at firms,
+- within firm.
 
 Translate the word-based rating into a numeric value using this scale:
 low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
@@ -149,9 +149,10 @@ if uploaded_file and role:
 
                 # ✅ Improved GPT score extraction with flexible regex
                 gpt_score = 0
-                match = re.search(r"Total\\s*[:\\-]?\\s*(\\d+)", gpt_result, re.IGNORECASE)
-                if match:
-                    gpt_score = int(match.group(1))
+match = re.search(r"Total(?: Numeric)?(?: Score)?\s*[:\-]?\s*(\d+)", gpt_result, re.IGNORECASE)
+if match:
+    gpt_score = int(match.group(1))
+
 
                 # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
