@@ -98,10 +98,26 @@ if password != PASSWORD:
 role = st.text_input("🔍 What role is this CV being considered for?")
 uploaded_file = st.file_uploader("Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
+gpt_result = ""
+gpt_score = None
+cv_text = ""
+
 if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
 
     if cv_text:
+        st.subheader("🤖 GPT Scoring")
+
+        if st.button("Run GPT Scoring"):
+            with st.spinner("Scoring CV with GPT..."):
+                rubric = load_rubric()
+                gpt_result = rate_cv(cv_text, rubric, role)
+                gpt_score = extract_gpt_score(gpt_result)
+
+                st.success("GPT Scoring Complete!")
+                st.markdown("### 🧐 GPT Rating")
+                st.markdown(gpt_result)
+
         st.subheader("📝 Consultant Input")
 
         consultant_inputs = {
@@ -118,7 +134,6 @@ if uploaded_file and role:
             "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
         }
 
-        # Rating-to-score mapping
         score_map = {
             "low": 0,
             "none": 0,
@@ -134,38 +149,31 @@ if uploaded_file and role:
             "thematic": 5
         }
 
-        if st.button("Rate CV"):
-            with st.spinner("Rating in progress..."):
-                rubric = load_rubric()
-                gpt_result = rate_cv(cv_text, rubric, role)
+        if st.button("Calculate Total Score"):
+            st.markdown("### 👤 Consultant Ratings")
+            consultant_score = 0
 
-                st.success("Rating complete!")
+            for category, rating in consultant_inputs.items():
+                score = score_map.get(rating.lower(), 0)
+                if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
+                    consultant_score -= score
+                    st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
+                else:
+                    consultant_score += score
+                    st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                st.markdown("### 🧐 GPT Rating")
-                st.markdown(gpt_result)
+            st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
 
-                st.markdown("### 👤 Consultant Ratings")
-                consultant_score = 0
-
-                for category, rating in consultant_inputs.items():
-                    score = score_map.get(rating.lower(), 0)
-                    if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
-                        consultant_score -= score
-                        st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
-                    else:
-                        consultant_score += score
-                        st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
-
-                # ✅ Robust GPT score extraction
-                gpt_score = extract_gpt_score(gpt_result)
-
-                # Final scores
-                st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
+            if gpt_result:
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
-
                 total_score = consultant_score + gpt_score
-                st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
-                st.markdown(f"### 📊 **Benchmark Score: 22**")
+            else:
+                st.markdown("### 🤖 GPT Score: *(not yet generated)*")
+                total_score = consultant_score
+
+            st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
+            st.markdown(f"### 📊 **Benchmark Score: 22**")
+
     else:
         st.error("Unsupported file format or failed to extract text.")
 
