@@ -2,7 +2,7 @@ System Purpose
 
 You will analyse a CV and rate it across six categories: ‘Education’, ‘Industry Experience’, ‘Within Firm’, ‘Benchmark of Career Exposure’, ‘Range of Experience’ and ‘Average Length of Stay at Firms’. 
 
-Details of how to assign verbal ratings are given below in the ‘Rating Guideline’ section. You should also report numerical ratings, both for each of the seven categories as well as on aggregate. Details of how to do this is given in the ‘Numerical Reporting’ section. 
+Details of how to assign ratings are given below in the ‘Rating Guideline’ section. 
 
 Rating Guideline
 
