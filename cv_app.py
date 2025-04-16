@@ -42,13 +42,15 @@ There are six categories. For each category, provide:
 - A word-based rating (e.g., Exceptional / Strong / Sound / Moderate / etc)
 - A short justification
 
-Return the total of all six numeric scores as: 
+Translate the word-based rating into a score using this mapping:
+low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
+Return the total as:
 Total: <sum>
 
 Present the output in a clean, readable format using markdown, not as JSON.
 
 CV:
-\"\"\"{cv_text}\"\"\"
+"""{cv_text}"""
 """}
     ]
     response = client.chat.completions.create(
@@ -60,7 +62,7 @@ CV:
 
 # Streamlit UI
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
-st.title("🔒 CV Rating App (GPT-4o)")
+st.title("🔐 CV Rating App (GPT-4o)")
 
 # Password gate
 password = st.text_input("Enter password to access the app:", type="password")
@@ -89,21 +91,21 @@ if uploaded_file and role:
             "Recent Career Progression": st.selectbox("Recent Career Progression", ["low", "moderate", "strong", "exceptional"]),
             "Career Moves Facilitated by Prior Colleagues": st.selectbox("Career Moves Facilitated by Prior Colleagues", ["none", "single instance", "thematic"]),
             "Regretted Career Choices": st.selectbox("Regretted Career Choices", ["none", "single instance", "thematic"]),
-            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"]),
-            "Rehire Status": st.selectbox("Rehire Status", ["no", "legacy", "yes"])
+            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
         }
 
         # Rating-to-score mapping
         score_map = {
             "low": 0,
             "none": 0,
+            "no": 0,
             "moderate": 1,
             "notable": 1,
             "legacy": 1,
             "sound": 2,
             "single instance": 2,
-            "strong": 3,
             "yes": 2,
+            "strong": 3,
             "exceptional": 5,
             "thematic": 5
         }
@@ -115,7 +117,7 @@ if uploaded_file and role:
 
                 st.success("Rating complete!")
 
-                st.markdown("### 🤖 GPT Rating")
+                st.markdown("### 🧐 GPT Rating")
                 st.markdown(gpt_result)
 
                 st.markdown("### 👤 Consultant Ratings")
@@ -141,10 +143,11 @@ if uploaded_file and role:
 
                 # Show final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
+                st.markdown(f"### 🧮 GPT Score: **{gpt_score}**")
 
                 total_score = consultant_score + gpt_score
                 st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
     else:
         st.error("Unsupported file format or failed to extract text.")
+
 
