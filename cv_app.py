@@ -14,7 +14,6 @@ from datetime import datetime
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Set up Google Sheets credentials
 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
 gc = gspread.authorize(credentials)
@@ -92,7 +91,6 @@ def extract_gpt_scores(text):
         "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
     ]
     scores = {f"GPT_{cat}": 0 for cat in categories}
-    scores["GPT Score"] = 0
     current_cat = None
 
     for line in text.splitlines():
@@ -116,6 +114,16 @@ def extract_gpt_scores(text):
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
+# Initialize session state
+if "gpt_scored" not in st.session_state:
+    st.session_state.gpt_scored = False
+if "gpt_result" not in st.session_state:
+    st.session_state.gpt_result = ""
+if "gpt_scores" not in st.session_state:
+    st.session_state.gpt_scores = {}
+if "gpt_score" not in st.session_state:
+    st.session_state.gpt_score = None
+
 # Password protection
 if st.text_input("Enter password to access the app:", type="password") != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
@@ -128,9 +136,6 @@ role = st.text_input("📌 Role Being Considered For")
 company = st.text_input("🏢 Company Being Considered For")
 uploaded_file = st.file_uploader("📄 Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
-gpt_result = ""
-gpt_scores = {}
-gpt_score = None
 cv_text = ""
 
 if uploaded_file and role:
@@ -142,6 +147,10 @@ if uploaded_file and role:
                 gpt_result = rate_cv(cv_text, rubric, role)
                 gpt_scores = extract_gpt_scores(gpt_result)
                 gpt_score = gpt_scores.get("GPT Score", 0)
+                st.session_state.gpt_result = gpt_result
+                st.session_state.gpt_scores = gpt_scores
+                st.session_state.gpt_score = gpt_score
+                st.session_state.gpt_scored = True
                 st.success("GPT scoring complete!")
                 st.markdown("### 🧐 GPT Rating")
                 st.markdown(gpt_result)
@@ -168,47 +177,46 @@ if uploaded_file and role:
             "strong": 3, "exceptional": 5, "thematic": 5
         }
 
-        if st.button("Calculate Total Score"):
-            consultant_score = 0
-            st.markdown("### 👤 Consultant Ratings")
-            for category, rating in consultant_inputs.items():
-                score = score_map.get(rating.lower(), 0)
-                if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
-                    consultant_score -= score
-                    st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
-                else:
-                    consultant_score += score
-                    st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
+        if not st.session_state.gpt_scored:
+            st.warning("⚠️ Please run GPT scoring first.")
+        else:
+            if st.button("Calculate Total Score"):
+                consultant_score = 0
+                st.markdown("### 👤 Consultant Ratings")
+                for category, rating in consultant_inputs.items():
+                    score = score_map.get(rating.lower(), 0)
+                    if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
+                        consultant_score -= score
+                        st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
+                    else:
+                        consultant_score += score
+                        st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-            st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-            if gpt_score is not None:
-                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
+                gpt_score = st.session_state.gpt_score
+                gpt_scores = st.session_state.gpt_scores
                 total_score = consultant_score + gpt_score
-            else:
-                st.markdown("### 🤖 GPT Score: *(not yet generated)*")
-                total_score = consultant_score
 
-            st.markdown(f"### ✅ Total Score: {total_score}")
-            st.markdown("### 📊 Benchmark Score: 22")
+                st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
+                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
+                st.markdown(f"### ✅ Total Score: {total_score}")
+                st.markdown("### 📊 Benchmark Score: 22")
 
-            # Save to Google Sheet
-            consultant_scores = [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
-            gpt_scores_ordered = [gpt_scores.get(f"GPT_{cat}", 0) for cat in [
-                "Education", "Industry Experience", "Range of Experience",
-                "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
-            ]]
+                consultant_scores = [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
+                gpt_scores_ordered = [gpt_scores.get(f"GPT_{cat}", 0) for cat in [
+                    "Education", "Industry Experience", "Range of Experience",
+                    "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
+                ]]
 
-            extended_row = [
-                datetime.now().isoformat(),
-                consultant,
-                candidate,
-                role,
-                company,
-                gpt_score if gpt_score is not None else "N/A",
-                consultant_score,
-                total_score
-            ] + gpt_scores_ordered + consultant_scores
+                extended_row = [
+                    datetime.now().isoformat(),
+                    consultant,
+                    candidate,
+                    role,
+                    company,
+                    gpt_score,
+                    consultant_score,
+                    total_score
+                ] + gpt_scores_ordered + consultant_scores
 
-            sheet.append_row(extended_row)
-
+                sheet.append_row(extended_row)
 
