@@ -147,7 +147,7 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # ✅ Improved GPT score extraction with flexible regex
+                # ✅ Final fixed GPT score extraction (handles multiple formats)
                 gpt_score = 0
                 match = re.search(r"Total(?: Numeric)?(?: Score)?\s*[:\-]?\s*(\d+)", gpt_result, re.IGNORECASE)
                 if match:
@@ -162,4 +162,3 @@ if uploaded_file and role:
                 st.markdown(f"### 📊 **Benchmark Score: 22**")
     else:
         st.error("Unsupported file format or failed to extract text.")
-
