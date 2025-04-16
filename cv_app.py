@@ -45,45 +45,37 @@ def extract_text(file):
 
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
-You are an evaluator scoring a CV for a role at "{role}".
+You are a CV scoring assistant. You will score the following CV across six precise categories.
 
-You MUST evaluate the CV using the scoring rubric that was just provided in full above. Do not rely on any assumptions, and do not introduce criteria that are not present in the rubric. You must reference the rubric definitions for each category.
+💡 Use ONLY the instructions from the rubric provided in the system prompt. DO NOT use prior knowledge or assumptions. Follow the decision rules exactly.
 
-Score the CV in the following **exact order**:
+The six categories are:
+1. Education
+2. Industry Experience
+3. Range of Experience
+4. Benchmark of Career Exposure
+5. Average Length of Stay at Firms
+6. Within Firm
 
-1. Education  
-2. Industry experience  
-3. Range of experience  
-4. Benchmark of career exposure  
-5. Average length of stay at firms  
-6. Within firm alignment
+For each category:
+- Determine the score using the rubric provided
+- Give a numeric score (e.g., 0–5)
+- Include a clear explanation (justification)
 
-For each one, include:
-- A **numeric rating (1–5)** based ONLY on the rubric
-- A **word-based rating** that reflects the rubric scale
-- A **justification** that cites specific details from the CV in relation to the rubric
+📊 At the end, return:
+- A full breakdown with numbered categories
+- A `Total Score:` line showing the total sum of all six numeric scores
 
-After all six categories, provide:
+CV to evaluate:
+\"\"\"{cv_text}\"\"\"
 
-**Total Numeric Score: <sum>**
-
-Use this score conversion if needed:
-low/none = 0  
-moderate = 1  
-sound/single instance = 2  
-strong = 3  
-exceptional/thematic = 5
-
-Do not summarize, rephrase, or add any other commentary. Just follow the rubric exactly.
-
-CV:
-"""{cv_text}"""
+Role being considered for: {role}
 """
     messages = [
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.1)
+    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
     return response.choices[0].message.content
 
 def extract_gpt_score(text):
