@@ -58,8 +58,8 @@ There are six categories:
 - within firm.
 
 For each one, provide:
-- A numeric rating (1–5)
 - A word-based rating
+- A numeric rating
 - A short justification
 
 Translate the word-based rating into a numeric value using this scale:
