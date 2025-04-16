@@ -50,7 +50,7 @@ Total: <sum>
 Present the output in a clean, readable format using markdown, not as JSON.
 
 CV:
-"""{cv_text}"""
+\"\"\"{cv_text}\"\"\"
 """
 
     messages = [
@@ -137,7 +137,7 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # ✅ Improved GPT total extraction using regex
+                # ✅ Extract GPT score using regex
                 gpt_score = 0
                 match = re.search(r"Total:\s*(\d+)", gpt_result)
                 if match:
@@ -145,7 +145,7 @@ if uploaded_file and role:
 
                 # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-                st.markdown(f"### 🧮 GPT Score: **{gpt_score}**")
+                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
 
                 total_score = consultant_score + gpt_score
                 st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
