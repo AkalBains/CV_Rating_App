@@ -86,6 +86,14 @@ def extract_gpt_score(text):
                 return int(match.group(1))
     return 0
 
+def extract_gpt_category_scores(text):
+    category_scores = {}
+    pattern = r"(?i)(education|industry experience|range of experience|benchmark of career exposure|average length of stay at firms|within firm):.*?(\d)"
+    matches = re.findall(pattern, text)
+    for category, score in matches:
+        category_scores[category.strip().lower()] = int(score)
+    return category_scores
+
 # 4. STREAMLIT UI
 
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
@@ -144,6 +152,7 @@ if uploaded_file and role:
 
         if st.button("Calculate Total Score"):
             consultant_score = 0
+            consultant_category_scores = {}
             st.markdown("### 👤 Consultant Ratings")
             for category, rating in consultant_inputs.items():
                 score = score_map.get(rating.lower(), 0)
@@ -153,8 +162,11 @@ if uploaded_file and role:
                 else:
                     consultant_score += score
                     st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
+                consultant_category_scores[category] = score if category not in ["Regretted Career Choices", "Regretted Personal Choices"] else -score
 
             st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
+
+            gpt_category_scores = extract_gpt_category_scores(gpt_result) if gpt_result else {}
             if gpt_score is not None:
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
                 total_score = consultant_score + gpt_score
@@ -165,8 +177,8 @@ if uploaded_file and role:
             st.markdown(f"### ✅ Total Score: {total_score}")
             st.markdown("### 📊 Benchmark Score: 22")
 
-            # Save to Google Sheet
-            sheet.append_row([
+            # Prepare row for Google Sheets
+            row = [
                 datetime.now().isoformat(),
                 consultant,
                 candidate,
@@ -174,5 +186,19 @@ if uploaded_file and role:
                 company,
                 gpt_score if gpt_score is not None else "N/A",
                 consultant_score,
-                total_score
-            ])
+                total_score,
+            ]
+
+            # Add GPT category scores (fixed order)
+            gpt_categories = ["education", "industry experience", "range of experience",
+                              "benchmark of career exposure", "average length of stay at firms", "within firm"]
+            for cat in gpt_categories:
+                row.append(gpt_category_scores.get(cat, ""))
+
+            # Add Consultant category scores
+            for cat in consultant_inputs.keys():
+                row.append(consultant_category_scores.get(cat, ""))
+
+            # Append to sheet
+            sheet.append_row(row)
+
