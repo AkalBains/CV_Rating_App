@@ -2,32 +2,30 @@ import streamlit as st
 import openai
 import json
 import fitz  # PyMuPDF for PDFs
-import docx  # for Word documents
+import docx
 import os
 import re
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# --- Google Sheets Setup ---
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-creds = Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"], scopes=SCOPES
-)
-client_gsheets = gspread.authorize(creds)
-SPREADSHEET_NAME = "CV Ratings"
-sheet = client_gsheets.open(SPREADSHEET_NAME).sheet1
-
-# --- OpenAI Setup ---
+# 🔐 Secure credentials
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# --- Load Scoring Rubric ---
+# Google Sheets setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+gc = gspread.authorize(credentials)
+SHEET_NAME = "CV Ratings"
+sheet = gc.open(SHEET_NAME).sheet1
+
+# Load rubric
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
 
-# --- Extract Text from File ---
+# Extract text
 def extract_text(file):
     if file.type == "text/plain":
         return file.read().decode("utf-8")
@@ -40,22 +38,16 @@ def extract_text(file):
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(file)
         return "\n".join([para.text for para in doc.paragraphs])
-    else:
-        return None
+    return None
 
-# --- GPT Scoring Function ---
+# GPT scoring
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
 You are evaluating a CV using the rubric provided above.
 
 Use ONLY the scoring criteria from the instructions to assign scores. Do NOT invent your own definitions.
 
-There are six categories. For each one, provide:
-- A numeric rating (1–5)
-- A word-based rating (e.g., Exceptional, Strong, Sound, Moderate, Low)
-- A short justification
-
-Score the CV according to:
+There are six categories:
 - education,
 - industry experience,
 - range of experience,
@@ -63,29 +55,28 @@ Score the CV according to:
 - average length of stay at firms,
 - within firm.
 
+For each one, provide:
+- A numeric rating (1–5)
+- A word-based rating
+- A short justification
+
 Translate the word-based rating into a numeric value using this scale:
 low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
 
 Return the total numeric score as:
 Total: <sum>
 
-Present everything in clean, readable markdown (not JSON).
-
 CV:
-"""{cv_text}"""
+\"\"\"{cv_text}\"\"\"
 """
     messages = [
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.2
-    )
+    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
     return response.choices[0].message.content
 
-# --- Extract GPT Score ---
+# Extract total from GPT
 def extract_gpt_score(text):
     for line in text.splitlines():
         if "total" in line.lower():
@@ -94,47 +85,37 @@ def extract_gpt_score(text):
                 return int(match.group(1))
     return 0
 
-# --- Streamlit UI ---
+# UI
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
-# --- Password Protection ---
-password = st.text_input("Enter password to access the app:", type="password")
-if password != PASSWORD:
+if st.text_input("Enter password to access the app:", type="password") != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
-# --- Consultant + Candidate Metadata ---
-consultant_name = st.text_input("Consultant Name")
-candidate_name = st.text_input("Candidate Name")
-role = st.text_input("Role being considered for")
-company = st.text_input("Company being considered for")
+consultant = st.text_input("👤 Consultant Name")
+candidate = st.text_input("🧑 Candidate Name")
+role = st.text_input("📌 Role Being Considered For")
+company = st.text_input("🏢 Company Being Considered For")
+uploaded_file = st.file_uploader("📄 Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
-uploaded_file = st.file_uploader("Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
-
-# --- Rating Variables ---
 gpt_result = ""
 gpt_score = None
 cv_text = ""
 
 if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
-
     if cv_text:
-        st.subheader("🤖 GPT Scoring")
-
         if st.button("Run GPT Scoring"):
-            with st.spinner("Scoring CV with GPT..."):
+            with st.spinner("Scoring with GPT..."):
                 rubric = load_rubric()
                 gpt_result = rate_cv(cv_text, rubric, role)
                 gpt_score = extract_gpt_score(gpt_result)
-
-                st.success("GPT Scoring Complete!")
+                st.success("GPT scoring complete!")
                 st.markdown("### 🧐 GPT Rating")
                 st.markdown(gpt_result)
 
         st.subheader("📝 Consultant Input")
-
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
             "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
@@ -150,24 +131,15 @@ if uploaded_file and role:
         }
 
         score_map = {
-            "low": 0,
-            "none": 0,
-            "no": 0,
-            "moderate": 1,
-            "notable": 1,
-            "legacy": 1,
-            "sound": 2,
-            "single instance": 2,
-            "yes": 2,
-            "strong": 3,
-            "exceptional": 5,
-            "thematic": 5
+            "low": 0, "none": 0, "no": 0,
+            "moderate": 1, "notable": 1, "legacy": 1,
+            "sound": 2, "single instance": 2, "yes": 2,
+            "strong": 3, "exceptional": 5, "thematic": 5
         }
 
         if st.button("Calculate Total Score"):
-            st.markdown("### 👤 Consultant Ratings")
             consultant_score = 0
-
+            st.markdown("### 👤 Consultant Ratings")
             for category, rating in consultant_inputs.items():
                 score = score_map.get(rating.lower(), 0)
                 if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
@@ -178,7 +150,6 @@ if uploaded_file and role:
                     st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
             st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-
             if gpt_score is not None:
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
                 total_score = consultant_score + gpt_score
@@ -186,17 +157,16 @@ if uploaded_file and role:
                 st.markdown("### 🤖 GPT Score: *(not yet generated)*")
                 total_score = consultant_score
 
-            st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
-            st.markdown(f"### 📊 **Benchmark Score: 22**")
+            st.markdown(f"### ✅ Total Score: {total_score}")
+            st.markdown("### 📊 Benchmark Score: 22")
 
-            # ✅ Append to Google Sheet
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            row = [now, consultant_name, candidate_name, role, company, gpt_score or 0, consultant_score, total_score]
-            try:
-                sheet.append_row(row)
-                st.success("✅ Results saved to Google Sheet!")
-            except Exception as e:
-                st.error(f"❌ Failed to save to Google Sheet: {e}")
-
-    else:
-        st.error("Unsupported file format or failed to extract text.")
+            sheet.append_row([
+                datetime.now().isoformat(),
+                consultant,
+                candidate,
+                role,
+                company,
+                gpt_score if gpt_score is not None else "N/A",
+                consultant_score,
+                total_score
+            ])
