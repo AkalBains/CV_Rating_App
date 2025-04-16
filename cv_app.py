@@ -34,7 +34,7 @@ def extract_text(file):
 # Call GPT to rate CV
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
-You are evaluating a CV using the rubric provided above. 
+You are evaluating a CV using the rubric provided above.
 
 Use ONLY the scoring criteria from the instructions to assign scores. Do NOT invent your own definitions.
 
@@ -149,10 +149,9 @@ if uploaded_file and role:
 
                 # ✅ Improved GPT score extraction with flexible regex
                 gpt_score = 0
-match = re.search(r"Total(?: Numeric)?(?: Score)?\s*[:\-]?\s*(\d+)", gpt_result, re.IGNORECASE)
-if match:
-    gpt_score = int(match.group(1))
-
+                match = re.search(r"Total(?: Numeric)?(?: Score)?\s*[:\-]?\s*(\d+)", gpt_result, re.IGNORECASE)
+                if match:
+                    gpt_score = int(match.group(1))
 
                 # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
