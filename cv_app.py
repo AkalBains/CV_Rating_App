@@ -5,18 +5,16 @@ import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
 
-# 🔐 Set your password here (from secrets)
+# 🔐 Secure credentials
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
-
-# ✅ Secure API key (from secrets)
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Load the rubric from file
+# Load scoring rubric
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
 
-# Extract plain text from uploaded file
+# Extract text from uploaded CV
 def extract_text(file):
     if file.type == "text/plain":
         return file.read().decode("utf-8")
@@ -26,13 +24,13 @@ def extract_text(file):
             for page in doc:
                 text += page.get_text()
         return text
-    elif file.type in ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(file)
         return "\n".join([para.text for para in doc.paragraphs])
     else:
         return None
 
-# Call GPT to rate the CV
+# Call GPT to rate CV
 def rate_cv(cv_text, rubric_text, role):
     messages = [
         {"role": "system", "content": rubric_text},
@@ -44,46 +42,41 @@ There are six categories. For each category, provide:
 - A word-based rating (e.g., Exceptional / Strong / Sound / Moderate / etc)
 - A short justification
 
+Return the total of all six numeric scores as: 
+Total: <sum>
+
 Present the output in a clean, readable format using markdown, not as JSON.
 
 CV:
 \"\"\"{cv_text}\"\"\"
 """}
     ]
-
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
         temperature=0.2
     )
-
     return response.choices[0].message.content
 
 # Streamlit UI
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
-# 🔐 Password protection
+# Password gate
 password = st.text_input("Enter password to access the app:", type="password")
-
 if password != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
-# Role input
+# Role and file input
 role = st.text_input("🔍 What role is this CV being considered for?")
+uploaded_file = st.file_uploader("Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
-# File upload and CV rating
-st.write("Upload a CV file (.txt, .pdf, or .docx) to get it rated across 6 categories using your custom rubric.")
-uploaded_file = st.file_uploader("Upload CV", type=["txt", "pdf", "docx"])
-
-# Only proceed if both a file and a role have been provided
 if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
 
     if cv_text:
         st.subheader("📝 Consultant Input")
-        st.write("Select the appropriate rating for each category:")
 
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
@@ -96,18 +89,21 @@ if uploaded_file and role:
             "Recent Career Progression": st.selectbox("Recent Career Progression", ["low", "moderate", "strong", "exceptional"]),
             "Career Moves Facilitated by Prior Colleagues": st.selectbox("Career Moves Facilitated by Prior Colleagues", ["none", "single instance", "thematic"]),
             "Regretted Career Choices": st.selectbox("Regretted Career Choices", ["none", "single instance", "thematic"]),
-            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
+            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"]),
+            "Rehire Status": st.selectbox("Rehire Status", ["no", "legacy", "yes"])
         }
 
-        # Mapping from rating label to score
+        # Rating-to-score mapping
         score_map = {
             "low": 0,
             "none": 0,
             "moderate": 1,
             "notable": 1,
+            "legacy": 1,
             "sound": 2,
             "single instance": 2,
             "strong": 3,
+            "yes": 2,
             "exceptional": 5,
             "thematic": 5
         }
@@ -115,26 +111,40 @@ if uploaded_file and role:
         if st.button("Rate CV"):
             with st.spinner("Rating in progress..."):
                 rubric = load_rubric()
-                result = rate_cv(cv_text, rubric, role)
+                gpt_result = rate_cv(cv_text, rubric, role)
 
                 st.success("Rating complete!")
 
-                # GPT Output
                 st.markdown("### 🤖 GPT Rating")
-                st.markdown(result)
+                st.markdown(gpt_result)
 
-                # Consultant Ratings
                 st.markdown("### 👤 Consultant Ratings")
-                total_score = 0
+                consultant_score = 0
 
                 for category, rating in consultant_inputs.items():
                     score = score_map.get(rating.lower(), 0)
                     if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
-                        total_score -= score
+                        consultant_score -= score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
                     else:
-                        total_score += score
+                        consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                st.markdown(f"### 🧮 **Aggregate Consultant Score: {total_score}**")
+                # Attempt to extract GPT total score
+                gpt_score = 0
+                for line in gpt_result.splitlines():
+                    if "Total:" in line:
+                        try:
+                            gpt_score = int(line.split("Total:")[-1].strip())
+                        except:
+                            pass
+
+                # Show final scores
+                st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
+                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
+
+                total_score = consultant_score + gpt_score
+                st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
+    else:
+        st.error("Unsupported file format or failed to extract text.")
 
