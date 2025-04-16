@@ -221,3 +221,5 @@ if uploaded_file and role:
                 consultant_score,
                 total_score
             ])
+
+
