@@ -32,9 +32,7 @@ def extract_text(file):
 
 # Call GPT to rate CV
 def rate_cv(cv_text, rubric_text, role):
-    messages = [
-        {"role": "system", "content": rubric_text},
-        {"role": "user", "content": f"""
+    prompt = f"""
 Please rate the following CV using the rubric provided above, in the context of the role: "{role}".
 
 There are six categories. For each category, provide:
@@ -44,15 +42,21 @@ There are six categories. For each category, provide:
 
 Translate the word-based rating into a score using this mapping:
 low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
+
 Return the total as:
 Total: <sum>
 
 Present the output in a clean, readable format using markdown, not as JSON.
 
 CV:
-"""{cv_text}"""
-"""}
+\"\"\"{cv_text}\"\"\"
+"""
+
+    messages = [
+        {"role": "system", "content": rubric_text},
+        {"role": "user", "content": prompt}
     ]
+
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
@@ -132,7 +136,7 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # Attempt to extract GPT total score
+                # Extract GPT total score
                 gpt_score = 0
                 for line in gpt_result.splitlines():
                     if "Total:" in line:
@@ -141,7 +145,7 @@ if uploaded_file and role:
                         except:
                             pass
 
-                # Show final scores
+                # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
                 st.markdown(f"### 🧮 GPT Score: **{gpt_score}**")
 
