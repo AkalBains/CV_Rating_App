@@ -175,10 +175,7 @@ if uploaded_file and role:
             "strong": 3, "exceptional": 5, "thematic": 5
         }
 
-        score_button_disabled = not st.session_state.gpt_result
-if score_button_disabled:
-    st.warning("Please run GPT scoring before calculating total score.")
-if st.button("Calculate Total Score", disabled=score_button_disabled):
+        if st.button("Calculate Total Score"):
             consultant_score = 0
             st.markdown("### 👤 Consultant Ratings")
             for category, rating in consultant_inputs.items():
@@ -224,4 +221,3 @@ if st.button("Calculate Total Score", disabled=score_button_disabled):
                 consultant_score,
                 total_score
             ])
-
