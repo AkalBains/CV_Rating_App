@@ -4,6 +4,7 @@ import json
 import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
+import re  # For GPT total extraction
 
 # 🔐 Secure credentials
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
@@ -136,14 +137,11 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # Extract GPT total score
+                # ✅ Improved GPT total extraction using regex
                 gpt_score = 0
-                for line in gpt_result.splitlines():
-                    if "Total:" in line:
-                        try:
-                            gpt_score = int(line.split("Total:")[-1].strip())
-                        except:
-                            pass
+                match = re.search(r"Total:\s*(\d+)", gpt_result)
+                if match:
+                    gpt_score = int(match.group(1))
 
                 # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
@@ -153,5 +151,4 @@ if uploaded_file and role:
                 st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
     else:
         st.error("Unsupported file format or failed to extract text.")
-
 
