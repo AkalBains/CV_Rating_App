@@ -1,7 +1,7 @@
 import streamlit as st
 import openai
 import json
-import fitz  # PyMuPDF for PDFs
+import fitz  # PyMuPDF
 import docx
 import os
 import re
@@ -9,24 +9,31 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# 1. AUTH & GOOGLE SHEETS SETUP
-
+# 🔐 Credentials
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Set up Google Sheets credentials
-scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+# Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
 gc = gspread.authorize(credentials)
 SHEET_NAME = "Track Record Ratings"
 sheet = gc.open(SHEET_NAME).sheet1
 
-# 2. RUBRIC & CV EXTRACTION FUNCTIONS
+# Session state for persistent scoring
+if "gpt_result" not in st.session_state:
+    st.session_state.gpt_result = ""
+if "gpt_score" not in st.session_state:
+    st.session_state.gpt_score = None
+if "gpt_category_scores" not in st.session_state:
+    st.session_state.gpt_category_scores = {}
 
+# Load rubric
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
 
+# Text extraction
 def extract_text(file):
     if file.type == "text/plain":
         return file.read().decode("utf-8")
@@ -41,13 +48,12 @@ def extract_text(file):
         return "\n".join([para.text for para in doc.paragraphs])
     return None
 
-# 3. GPT SCORING
-
+# GPT scoring
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
 You are a CV scoring assistant. You will score the following CV across six precise categories.
 
-💡 Use ONLY the instructions from the rubric provided in the system prompt. DO NOT use prior knowledge or assumptions. Follow the decision rules exactly.
+Use ONLY the instructions from the rubric provided in the system prompt. DO NOT use prior knowledge or assumptions.
 
 The six categories are:
 1. Education
@@ -58,25 +64,22 @@ The six categories are:
 6. Within Firm
 
 For each category:
-- Determine the score using the rubric provided
-- Provide only a word-based rating (e.g., Low, Moderate, Strong)
-- Give a clear explanation (justification)
+- Assign a word-based rating (e.g. Low, Moderate, Strong)
+- Provide a clear justification
 
-At the end, return the output in this exact format:
+Return output like:
+Education: Strong - Explanation...
+...
+Total Score: <sum of numeric equivalents>
 
-Category Name: Rating - Justification  
-(e.g. Education: Strong - The candidate has a degree from a top 10 university.)
+Conversion rules:
+low/none/no = 0
+moderate/notable/legacy = 1
+sound/single instance/yes = 2
+strong = 3
+exceptional/thematic = 5
 
-Total Score: <sum of all 6 ratings after converting to numbers>
-
-Conversion Scale:
-"low" / "none" / "no" = 0  
-"moderate" / "notable" / "legacy" = 1  
-"sound" / "single instance" / "yes" = 2  
-"strong" = 3  
-"exceptional" / "thematic" = 5
-
-CV to evaluate:
+CV:
 \"\"\"{cv_text}\"\"\"
 
 Role being considered for: {role}
@@ -85,14 +88,10 @@ Role being considered for: {role}
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.2
-    )
+    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
     return response.choices[0].message.content
 
-
+# Extract individual GPT category scores
 def extract_gpt_scores(text):
     score_map = {
         "low": 0, "none": 0, "no": 0,
@@ -117,126 +116,106 @@ def extract_gpt_scores(text):
                     rating_part = parts[1].strip().split("-")[0].strip().lower()
                     scores[f"GPT_{cat}"] = score_map.get(rating_part, 0)
         if "total score" in line.lower():
-            match = re.search(r"(\\d+)", line)
+            match = re.search(r"(\d+)", line)
             if match:
                 scores["GPT Score"] = int(match.group(1))
 
     return scores
 
-# 4. STREAMLIT UI
-
-
-def extract_gpt_scores(text):
-    categories = [
-        "Education", "Industry Experience", "Range of Experience",
-        "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
-    ]
-    scores = {f"GPT_{cat}": 0 for cat in categories}
-    current_cat = None
-
-    for line in text.splitlines():
-        for cat in categories:
-            if cat.lower() in line.lower():
-                current_cat = f"GPT_{cat}"
-                break
-        if "numeric rating" in line.lower() and current_cat:
-            match = re.search(r"(\d+)", line)
-            if match:
-                scores[current_cat] = int(match.group(1))
-                current_cat = None
-        elif "total" in line.lower() and "numeric" in line.lower():
-            match = re.search(r"(\d+)", line)
-            if match:
-                scores["GPT Score"] = int(match.group(1))
-    return scores
-
+# UI
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
-# Password protection
+# Login
 if st.text_input("Enter password to access the app:", type="password") != PASSWORD:
-    st.warning("Access restricted. Please enter the correct password.")
+    st.warning("Access restricted.")
     st.stop()
 
-# Consultant inputs
+# Consultant info
 consultant = st.text_input("👤 Consultant Name")
 candidate = st.text_input("🧑 Candidate Name")
 role = st.text_input("📌 Role Being Considered For")
 company = st.text_input("🏢 Company Being Considered For")
-uploaded_file = st.file_uploader("📄 Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
-
-gpt_result = ""
-gpt_score = None
-cv_text = ""
+uploaded_file = st.file_uploader("📄 Upload CV", type=["txt", "pdf", "docx"])
 
 if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
-    if cv_text:
-        if st.button("Run GPT Scoring"):
-            with st.spinner("Scoring with GPT..."):
-                rubric = load_rubric()
-                gpt_result = rate_cv(cv_text, rubric, role)
-                gpt_scores = extract_gpt_scores(gpt_result)
-                gpt_score = gpt_scores.get("GPT Score", 0)
-                st.success("GPT scoring complete!")
-                st.markdown("### 🧐 GPT Rating")
-                st.markdown(gpt_result)
+    if cv_text and st.button("Run GPT Scoring"):
+        with st.spinner("Scoring with GPT..."):
+            rubric = load_rubric()
+            result = rate_cv(cv_text, rubric, role)
+            st.session_state.gpt_result = result
+            st.session_state.gpt_category_scores = extract_gpt_scores(result)
+            st.session_state.gpt_score = st.session_state.gpt_category_scores["GPT Score"]
+            st.success("GPT scoring complete!")
 
-        st.subheader("📝 Consultant Input")
-        consultant_inputs = {
-            "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
-            "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
-            "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
-            "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
-            "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
-            "Internal Career Progression": st.selectbox("Internal Career Progression", ["low", "moderate", "strong", "exceptional"]),
-            "Recent Career Progression": st.selectbox("Recent Career Progression", ["low", "moderate", "strong", "exceptional"]),
-            "Career Moves Facilitated by Prior Colleagues": st.selectbox("Career Moves Facilitated by Prior Colleagues", ["none", "single instance", "thematic"]),
-            "Regretted Career Choices": st.selectbox("Regretted Career Choices", ["none", "single instance", "thematic"]),
-            "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
-        }
+if st.session_state.gpt_result:
+    st.markdown("### 🧐 GPT Rating")
+    st.markdown(st.session_state.gpt_result)
 
-        score_map = {
-            "low": 0, "none": 0, "no": 0,
-            "moderate": 1, "notable": 1, "legacy": 1,
-            "sound": 2, "single instance": 2, "yes": 2,
-            "strong": 3, "exceptional": 5, "thematic": 5
-        }
+# Consultant input
+if uploaded_file:
+    st.subheader("📝 Consultant Input")
+    consultant_inputs = {
+        "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
+        "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
+        "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
+        "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
+        "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
+        "Internal Career Progression": st.selectbox("Internal Career Progression", ["low", "moderate", "strong", "exceptional"]),
+        "Recent Career Progression": st.selectbox("Recent Career Progression", ["low", "moderate", "strong", "exceptional"]),
+        "Career Moves Facilitated by Prior Colleagues": st.selectbox("Career Moves Facilitated by Prior Colleagues", ["none", "single instance", "thematic"]),
+        "Regretted Career Choices": st.selectbox("Regretted Career Choices", ["none", "single instance", "thematic"]),
+        "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
+    }
 
-        if st.button("Calculate Total Score"):
-            consultant_score = 0
-            st.markdown("### 👤 Consultant Ratings")
-            for category, rating in consultant_inputs.items():
-                score = score_map.get(rating.lower(), 0)
-                if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
-                    consultant_score -= score
-                    st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
-                else:
-                    consultant_score += score
-                    st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
+    score_map = {
+        "low": 0, "none": 0, "no": 0,
+        "moderate": 1, "notable": 1, "legacy": 1,
+        "sound": 2, "single instance": 2, "yes": 2,
+        "strong": 3, "exceptional": 5, "thematic": 5
+    }
 
-            st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-            if gpt_score is not None:
-                st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
-                total_score = consultant_score + gpt_score
+    if st.button("Calculate Total Score"):
+        consultant_score = 0
+        st.markdown("### 👤 Consultant Ratings")
+        for category, rating in consultant_inputs.items():
+            score = score_map.get(rating.lower(), 0)
+            if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
+                consultant_score -= score
+                st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
             else:
-                st.markdown("### 🤖 GPT Score: *(not yet generated)*")
-                total_score = consultant_score
+                consultant_score += score
+                st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-            st.markdown(f"### ✅ Total Score: {total_score}")
-            st.markdown("### 📊 Benchmark Score: 22")
+        gpt_score = st.session_state.gpt_score or 0
+        total_score = consultant_score + gpt_score
+        st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
+        st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
+        st.markdown(f"### ✅ Total Score: {total_score}")
+        st.markdown("### 📊 Benchmark Score: 22")
 
-            # Save to Google Sheet
+        row = [
+            datetime.now().isoformat(),
+            consultant, candidate, role, company,
+            gpt_score,
+            consultant_score,
+            total_score
+        ]
 
-            extended_row = [
-                datetime.now().isoformat(),
-                consultant,
-                candidate,
-                role,
-                company,
-                gpt_score if gpt_score is not None else "N/A",
-                consultant_score,
-                total_score
-            ] + [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
+        # Add all GPT category scores
+        for cat in [
+            "Education", "Industry Experience", "Range of Experience",
+            "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
+        ]:
+            row.append(st.session_state.gpt_category_scores.get(f"GPT_{cat}", 0))
 
-            sheet.append_row(extended_row)
+        # Add consultant category scores
+        for category in consultant_inputs:
+            score = score_map.get(consultant_inputs[category].lower(), 0)
+            if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
+                score *= -1
+            row.append(score)
+
+        sheet.append_row(row)
+
