@@ -1,7 +1,7 @@
 import streamlit as st
 import openai
 import json
-import fitz  # PyMuPDF
+import fitz  # PyMuPDF for PDFs
 import docx
 import os
 import re
@@ -45,37 +45,45 @@ def extract_text(file):
 
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
-You are evaluating a CV using the rubric provided above.
+You are an evaluator scoring a CV for a role at "{role}".
 
-Use ONLY the scoring criteria from the instructions to assign scores. Do NOT invent your own definitions.
+You MUST evaluate the CV using the scoring rubric that was just provided in full above. Do not rely on any assumptions, and do not introduce criteria that are not present in the rubric. You must reference the rubric definitions for each category.
 
-There are six categories:
-- education,
-- industry experience,
-- range of experience,
-- benchmark of career exposure,
-- average length of stay at firms,
-- within firm.
+Score the CV in the following **exact order**:
 
-For each one, provide:
-- A word-based rating
-- A numeric rating
-- A short justification
+1. Education  
+2. Industry experience  
+3. Range of experience  
+4. Benchmark of career exposure  
+5. Average length of stay at firms  
+6. Within firm alignment
 
-Translate the word-based rating into a numeric value using this scale:
-low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
+For each one, include:
+- A **numeric rating (1–5)** based ONLY on the rubric
+- A **word-based rating** that reflects the rubric scale
+- A **justification** that cites specific details from the CV in relation to the rubric
 
-Return the total numeric score as:
-Total: <sum>
+After all six categories, provide:
+
+**Total Numeric Score: <sum>**
+
+Use this score conversion if needed:
+low/none = 0  
+moderate = 1  
+sound/single instance = 2  
+strong = 3  
+exceptional/thematic = 5
+
+Do not summarize, rephrase, or add any other commentary. Just follow the rubric exactly.
 
 CV:
-\"\"\"{cv_text}\"\"\"
+"""{cv_text}"""
 """
     messages = [
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
+    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.1)
     return response.choices[0].message.content
 
 def extract_gpt_score(text):
@@ -86,15 +94,32 @@ def extract_gpt_score(text):
                 return int(match.group(1))
     return 0
 
-def extract_gpt_category_scores(text):
-    category_scores = {}
-    pattern = r"(?i)(education|industry experience|range of experience|benchmark of career exposure|average length of stay at firms|within firm):.*?(\d)"
-    matches = re.findall(pattern, text)
-    for category, score in matches:
-        category_scores[category.strip().lower()] = int(score)
-    return category_scores
-
 # 4. STREAMLIT UI
+
+
+def extract_gpt_scores(text):
+    categories = [
+        "Education", "Industry Experience", "Range of Experience",
+        "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
+    ]
+    scores = {f"GPT_{cat}": 0 for cat in categories}
+    current_cat = None
+
+    for line in text.splitlines():
+        for cat in categories:
+            if cat.lower() in line.lower():
+                current_cat = f"GPT_{cat}"
+                break
+        if "numeric rating" in line.lower() and current_cat:
+            match = re.search(r"(\d+)", line)
+            if match:
+                scores[current_cat] = int(match.group(1))
+                current_cat = None
+        elif "total" in line.lower() and "numeric" in line.lower():
+            match = re.search(r"(\d+)", line)
+            if match:
+                scores["GPT Score"] = int(match.group(1))
+    return scores
 
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
@@ -122,12 +147,12 @@ if uploaded_file and role:
             with st.spinner("Scoring with GPT..."):
                 rubric = load_rubric()
                 gpt_result = rate_cv(cv_text, rubric, role)
-                gpt_score = extract_gpt_score(gpt_result)
+                gpt_scores = extract_gpt_scores(gpt_result)
+                gpt_score = gpt_scores.get("GPT Score", 0)
                 st.success("GPT scoring complete!")
                 st.markdown("### 🧐 GPT Rating")
                 st.markdown(gpt_result)
 
-        # Consultant scoring UI
         st.subheader("📝 Consultant Input")
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
@@ -152,7 +177,6 @@ if uploaded_file and role:
 
         if st.button("Calculate Total Score"):
             consultant_score = 0
-            consultant_category_scores = {}
             st.markdown("### 👤 Consultant Ratings")
             for category, rating in consultant_inputs.items():
                 score = score_map.get(rating.lower(), 0)
@@ -162,11 +186,8 @@ if uploaded_file and role:
                 else:
                     consultant_score += score
                     st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
-                consultant_category_scores[category] = score if category not in ["Regretted Career Choices", "Regretted Personal Choices"] else -score
 
             st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
-
-            gpt_category_scores = extract_gpt_category_scores(gpt_result) if gpt_result else {}
             if gpt_score is not None:
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
                 total_score = consultant_score + gpt_score
@@ -177,8 +198,9 @@ if uploaded_file and role:
             st.markdown(f"### ✅ Total Score: {total_score}")
             st.markdown("### 📊 Benchmark Score: 22")
 
-            # Prepare row for Google Sheets
-            row = [
+            # Save to Google Sheet
+
+            extended_row = [
                 datetime.now().isoformat(),
                 consultant,
                 candidate,
@@ -186,19 +208,16 @@ if uploaded_file and role:
                 company,
                 gpt_score if gpt_score is not None else "N/A",
                 consultant_score,
-                total_score,
-            ]
+                total_score
+            ] + [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
 
-            # Add GPT category scores (fixed order)
-            gpt_categories = ["education", "industry experience", "range of experience",
-                              "benchmark of career exposure", "average length of stay at firms", "within firm"]
-            for cat in gpt_categories:
-                row.append(gpt_category_scores.get(cat, ""))
-
-            # Add Consultant category scores
-            for cat in consultant_inputs.keys():
-                row.append(consultant_category_scores.get(cat, ""))
-
-            # Append to sheet
-            sheet.append_row(row)
-
+            sheet.append_row(extended_row)
+                datetime.now().isoformat(),
+                consultant,
+                candidate,
+                role,
+                company,
+                gpt_score if gpt_score is not None else "N/A",
+                consultant_score,
+                total_score
+            ])
