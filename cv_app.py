@@ -1,7 +1,7 @@
 import streamlit as st
 import openai
 import json
-import fitz  # PyMuPDF for PDFs
+import fitz  # PyMuPDF
 import docx
 import os
 import re
@@ -9,23 +9,24 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# 🔐 Secure credentials
+# 1. AUTH & GOOGLE SHEETS SETUP
+
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+# Set up Google Sheets credentials
+scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
 gc = gspread.authorize(credentials)
 SHEET_NAME = "Track Record Ratings"
 sheet = gc.open(SHEET_NAME).sheet1
 
-# Load rubric
+# 2. RUBRIC & CV EXTRACTION FUNCTIONS
+
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
 
-# Extract text
 def extract_text(file):
     if file.type == "text/plain":
         return file.read().decode("utf-8")
@@ -40,7 +41,8 @@ def extract_text(file):
         return "\n".join([para.text for para in doc.paragraphs])
     return None
 
-# GPT scoring
+# 3. GPT SCORING
+
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
 You are evaluating a CV using the rubric provided above.
@@ -76,7 +78,6 @@ CV:
     response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
     return response.choices[0].message.content
 
-# Extract total from GPT
 def extract_gpt_score(text):
     for line in text.splitlines():
         if "total" in line.lower():
@@ -85,14 +86,17 @@ def extract_gpt_score(text):
                 return int(match.group(1))
     return 0
 
-# UI
+# 4. STREAMLIT UI
+
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
+# Password protection
 if st.text_input("Enter password to access the app:", type="password") != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
+# Consultant inputs
 consultant = st.text_input("👤 Consultant Name")
 candidate = st.text_input("🧑 Candidate Name")
 role = st.text_input("📌 Role Being Considered For")
@@ -115,6 +119,7 @@ if uploaded_file and role:
                 st.markdown("### 🧐 GPT Rating")
                 st.markdown(gpt_result)
 
+        # Consultant scoring UI
         st.subheader("📝 Consultant Input")
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
@@ -160,6 +165,7 @@ if uploaded_file and role:
             st.markdown(f"### ✅ Total Score: {total_score}")
             st.markdown("### 📊 Benchmark Score: 22")
 
+            # Save to Google Sheet
             sheet.append_row([
                 datetime.now().isoformat(),
                 consultant,
