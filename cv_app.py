@@ -34,20 +34,30 @@ def extract_text(file):
 # Call GPT to rate CV
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
-Please rate the following CV using the rubric provided above, in the context of the role: "{role}".
+You are evaluating a CV using the rubric provided above. 
 
-There are six categories. For each category, provide:
+Use ONLY the scoring criteria from the instructions to assign scores. Do NOT invent your own definitions.
+
+There are six categories. For each one, provide:
 - A numeric rating (1–5)
-- A word-based rating (e.g., Exceptional / Strong / Sound / Moderate / etc)
+- A word-based rating (e.g., Exceptional, Strong, Sound, Moderate, Low)
 - A short justification
 
-Translate the word-based rating into a score using this mapping:
+Score the CV according to:
+- industry experience,
+- within firm alignment,
+- benchmark exposure,
+- range of experience,
+- education,
+- length of stay at firms.
+
+Translate the word-based rating into a numeric value using this scale:
 low/none = 0, moderate = 1, sound/single instance = 2, strong = 3, exceptional/thematic = 5
 
-Return the total as:
+Return the total numeric score as:
 Total: <sum>
 
-Present the output in a clean, readable format using markdown, not as JSON.
+Present everything in clean, readable markdown (not JSON).
 
 CV:
 \"\"\"{cv_text}\"\"\"
@@ -137,9 +147,9 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # ✅ Extract GPT score using regex
+                # ✅ Improved GPT score extraction with flexible regex
                 gpt_score = 0
-                match = re.search(r"Total:\s*(\d+)", gpt_result)
+                match = re.search(r"Total\\s*[:\\-]?\\s*(\\d+)", gpt_result, re.IGNORECASE)
                 if match:
                     gpt_score = int(match.group(1))
 
