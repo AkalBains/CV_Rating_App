@@ -204,12 +204,3 @@ if uploaded_file and role:
             ] + [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
 
             sheet.append_row(extended_row)
-                datetime.now().isoformat(),
-                consultant,
-                candidate,
-                role,
-                company,
-                gpt_score if gpt_score is not None else "N/A",
-                consultant_score,
-                total_score
-            ])
