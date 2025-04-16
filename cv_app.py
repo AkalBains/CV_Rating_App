@@ -17,7 +17,7 @@ client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
 gc = gspread.authorize(credentials)
-SHEET_NAME = "CV Ratings"
+SHEET_NAME = "Track Record Ratings"
 sheet = gc.open(SHEET_NAME).sheet1
 
 # Load rubric
