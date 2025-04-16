@@ -77,7 +77,7 @@ exceptional/thematic = 5
 Do not summarize, rephrase, or add any other commentary. Just follow the rubric exactly.
 
 CV:
-"""{cv_text}"""
+\"\"\"{cv_text}\"\"\"
 """
     messages = [
         {"role": "system", "content": rubric_text},
@@ -86,23 +86,13 @@ CV:
     response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.1)
     return response.choices[0].message.content
 
-def extract_gpt_score(text):
-    for line in text.splitlines():
-        if "total" in line.lower():
-            match = re.search(r"(\d+)", line)
-            if match:
-                return int(match.group(1))
-    return 0
-
-# 4. STREAMLIT UI
-
-
 def extract_gpt_scores(text):
     categories = [
         "Education", "Industry Experience", "Range of Experience",
         "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
     ]
     scores = {f"GPT_{cat}": 0 for cat in categories}
+    scores["GPT Score"] = 0
     current_cat = None
 
     for line in text.splitlines():
@@ -121,6 +111,8 @@ def extract_gpt_scores(text):
                 scores["GPT Score"] = int(match.group(1))
     return scores
 
+# 4. STREAMLIT UI
+
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
@@ -137,6 +129,7 @@ company = st.text_input("🏢 Company Being Considered For")
 uploaded_file = st.file_uploader("📄 Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
 gpt_result = ""
+gpt_scores = {}
 gpt_score = None
 cv_text = ""
 
@@ -199,6 +192,11 @@ if uploaded_file and role:
             st.markdown("### 📊 Benchmark Score: 22")
 
             # Save to Google Sheet
+            consultant_scores = [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
+            gpt_scores_ordered = [gpt_scores.get(f"GPT_{cat}", 0) for cat in [
+                "Education", "Industry Experience", "Range of Experience",
+                "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
+            ]]
 
             extended_row = [
                 datetime.now().isoformat(),
@@ -209,21 +207,8 @@ if uploaded_file and role:
                 gpt_score if gpt_score is not None else "N/A",
                 consultant_score,
                 total_score
-            ] + [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
-
-                       # Save to Google Sheet
-            extended_row = [
-                datetime.now().isoformat(),
-                consultant,
-                candidate,
-                role,
-                company,
-                gpt_score if gpt_score is not None else "N/A",
-                consultant_score,
-                total_score
-            ] + [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
+            ] + gpt_scores_ordered + consultant_scores
 
             sheet.append_row(extended_row)
-
 
 
