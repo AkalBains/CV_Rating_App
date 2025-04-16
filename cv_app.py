@@ -85,7 +85,7 @@ if uploaded_file and role:
         st.subheader("📝 Consultant Input")
         st.write("Select the appropriate rating for each category:")
 
-        consultant_scores = {
+        consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
             "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
             "Industry Experience": st.selectbox("Industry Experience", ["low", "moderate", "sound", "strong"]),
@@ -99,6 +99,19 @@ if uploaded_file and role:
             "Regretted Personal Choices": st.selectbox("Regretted Personal Choices", ["none", "single instance", "thematic"])
         }
 
+        # Mapping from rating label to score
+        score_map = {
+            "low": 0,
+            "none": 0,
+            "moderate": 1,
+            "notable": 1,
+            "sound": 2,
+            "single instance": 2,
+            "strong": 3,
+            "exceptional": 5,
+            "thematic": 5
+        }
+
         if st.button("Rate CV"):
             with st.spinner("Rating in progress..."):
                 rubric = load_rubric()
@@ -110,10 +123,18 @@ if uploaded_file and role:
                 st.markdown("### 🤖 GPT Rating")
                 st.markdown(result)
 
-                # Consultant Scores
+                # Consultant Ratings
                 st.markdown("### 👤 Consultant Ratings")
-                for category, rating in consultant_scores.items():
-                    st.markdown(f"- **{category}**: {rating.capitalize()}")
-    else:
-        st.error("Unsupported file format or failed to extract text.")
+                total_score = 0
+
+                for category, rating in consultant_inputs.items():
+                    score = score_map.get(rating.lower(), 0)
+                    if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
+                        total_score -= score
+                        st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
+                    else:
+                        total_score += score
+                        st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
+
+                st.markdown(f"### 🧮 **Aggregate Consultant Score: {total_score}**")
 
