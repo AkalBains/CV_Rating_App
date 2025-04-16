@@ -2,3 +2,5 @@ streamlit
 openai
 PyMuPDF
 python-docx
+gspread
+google-auth
