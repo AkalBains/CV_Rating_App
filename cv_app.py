@@ -59,12 +59,22 @@ The six categories are:
 
 For each category:
 - Determine the score using the rubric provided
-- Give a numeric score (e.g., 0–5)
-- Include a clear explanation (justification)
+- Provide only a word-based rating (e.g., Low, Moderate, Strong)
+- Give a clear explanation (justification)
 
-📊 At the end, return:
-- A full breakdown with numbered categories
-- A `Total Score:` line showing the total sum of all six numeric scores
+At the end, return the output in this exact format:
+
+Category Name: Rating - Justification  
+(e.g. Education: Strong - The candidate has a degree from a top 10 university.)
+
+Total Score: <sum of all 6 ratings after converting to numbers>
+
+Conversion Scale:
+"low" / "none" / "no" = 0  
+"moderate" / "notable" / "legacy" = 1  
+"sound" / "single instance" / "yes" = 2  
+"strong" = 3  
+"exceptional" / "thematic" = 5
 
 CV to evaluate:
 \"\"\"{cv_text}\"\"\"
@@ -75,16 +85,43 @@ Role being considered for: {role}
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-    response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.2)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        temperature=0.2
+    )
     return response.choices[0].message.content
 
-def extract_gpt_score(text):
+
+def extract_gpt_scores(text):
+    score_map = {
+        "low": 0, "none": 0, "no": 0,
+        "moderate": 1, "notable": 1, "legacy": 1,
+        "sound": 2, "single instance": 2, "yes": 2,
+        "strong": 3, "exceptional": 5, "thematic": 5
+    }
+
+    categories = [
+        "Education", "Industry Experience", "Range of Experience",
+        "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
+    ]
+
+    scores = {f"GPT_{cat}": 0 for cat in categories}
+    scores["GPT Score"] = 0
+
     for line in text.splitlines():
-        if "total" in line.lower():
-            match = re.search(r"(\d+)", line)
+        for cat in categories:
+            if line.lower().startswith(cat.lower()):
+                parts = line.split(":")
+                if len(parts) > 1:
+                    rating_part = parts[1].strip().split("-")[0].strip().lower()
+                    scores[f"GPT_{cat}"] = score_map.get(rating_part, 0)
+        if "total score" in line.lower():
+            match = re.search(r"(\\d+)", line)
             if match:
-                return int(match.group(1))
-    return 0
+                scores["GPT Score"] = int(match.group(1))
+
+    return scores
 
 # 4. STREAMLIT UI
 
@@ -149,7 +186,6 @@ if uploaded_file and role:
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
             "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
-            "Industry Experience": st.selectbox("Industry Experience", ["low", "moderate", "sound", "strong"]),
             "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
             "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
             "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
