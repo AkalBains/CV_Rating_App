@@ -5,17 +5,29 @@ import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
 import re
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
-# 🔐 Secure credentials
+# --- Google Sheets Setup ---
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+creds = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"], scopes=SCOPES
+)
+client_gsheets = gspread.authorize(creds)
+SPREADSHEET_NAME = "CV Ratings"
+sheet = client_gsheets.open(SPREADSHEET_NAME).sheet1
+
+# --- OpenAI Setup ---
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Load scoring rubric
+# --- Load Scoring Rubric ---
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
 
-# Extract text from uploaded CV
+# --- Extract Text from File ---
 def extract_text(file):
     if file.type == "text/plain":
         return file.read().decode("utf-8")
@@ -31,7 +43,7 @@ def extract_text(file):
     else:
         return None
 
-# Call GPT to rate CV
+# --- GPT Scoring Function ---
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
 You are evaluating a CV using the rubric provided above.
@@ -60,14 +72,12 @@ Total: <sum>
 Present everything in clean, readable markdown (not JSON).
 
 CV:
-\"\"\"{cv_text}\"\"\"
+"""{cv_text}"""
 """
-
     messages = [
         {"role": "system", "content": rubric_text},
         {"role": "user", "content": prompt}
     ]
-
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
@@ -75,7 +85,7 @@ CV:
     )
     return response.choices[0].message.content
 
-# New: robust GPT score extractor
+# --- Extract GPT Score ---
 def extract_gpt_score(text):
     for line in text.splitlines():
         if "total" in line.lower():
@@ -84,20 +94,25 @@ def extract_gpt_score(text):
                 return int(match.group(1))
     return 0
 
-# Streamlit UI
+# --- Streamlit UI ---
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
-st.title("🔐 CV Rating App (GPT-4o)")
+st.title("🔒 CV Rating App (GPT-4o)")
 
-# Password gate
+# --- Password Protection ---
 password = st.text_input("Enter password to access the app:", type="password")
 if password != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
-# Role and file input
-role = st.text_input("🔍 What role is this CV being considered for?")
+# --- Consultant + Candidate Metadata ---
+consultant_name = st.text_input("Consultant Name")
+candidate_name = st.text_input("Candidate Name")
+role = st.text_input("Role being considered for")
+company = st.text_input("Company being considered for")
+
 uploaded_file = st.file_uploader("Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
 
+# --- Rating Variables ---
 gpt_result = ""
 gpt_score = None
 cv_text = ""
@@ -164,7 +179,7 @@ if uploaded_file and role:
 
             st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
 
-            if gpt_result:
+            if gpt_score is not None:
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
                 total_score = consultant_score + gpt_score
             else:
@@ -174,6 +189,14 @@ if uploaded_file and role:
             st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
             st.markdown(f"### 📊 **Benchmark Score: 22**")
 
+            # ✅ Append to Google Sheet
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            row = [now, consultant_name, candidate_name, role, company, gpt_score or 0, consultant_score, total_score]
+            try:
+                sheet.append_row(row)
+                st.success("✅ Results saved to Google Sheet!")
+            except Exception as e:
+                st.error(f"❌ Failed to save to Google Sheet: {e}")
+
     else:
         st.error("Unsupported file format or failed to extract text.")
-
