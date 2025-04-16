@@ -4,7 +4,7 @@ import json
 import fitz  # PyMuPDF for PDFs
 import docx  # for Word documents
 import os
-import re  # For GPT total extraction
+import re
 
 # 🔐 Secure credentials
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
@@ -74,6 +74,15 @@ CV:
         temperature=0.2
     )
     return response.choices[0].message.content
+
+# New: robust GPT score extractor
+def extract_gpt_score(text):
+    for line in text.splitlines():
+        if "total" in line.lower():
+            match = re.search(r"(\d+)", line)
+            if match:
+                return int(match.group(1))
+    return 0
 
 # Streamlit UI
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
@@ -147,11 +156,8 @@ if uploaded_file and role:
                         consultant_score += score
                         st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
 
-                # ✅ Final fixed GPT score extraction (handles multiple formats)
-                gpt_score = 0
-                match = re.search(r"Total(?: Numeric)?(?: Score)?\s*[:\-]?\s*(\d+)", gpt_result, re.IGNORECASE)
-                if match:
-                    gpt_score = int(match.group(1))
+                # ✅ Robust GPT score extraction
+                gpt_score = extract_gpt_score(gpt_result)
 
                 # Final scores
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
@@ -162,3 +168,4 @@ if uploaded_file and role:
                 st.markdown(f"### 📊 **Benchmark Score: 22**")
     else:
         st.error("Unsupported file format or failed to extract text.")
+
