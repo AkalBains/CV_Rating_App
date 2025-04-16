@@ -50,7 +50,7 @@ Total: <sum>
 Present the output in a clean, readable format using markdown, not as JSON.
 
 CV:
-\"\"\"{cv_text}\"\"\"
+"""{cv_text}"""
 """
 
     messages = [
@@ -149,6 +149,7 @@ if uploaded_file and role:
 
                 total_score = consultant_score + gpt_score
                 st.markdown(f"### ✅ **Total Aggregate Score: {total_score}**")
+                st.markdown(f"### 📊 **Benchmark Score: 22**")
     else:
         st.error("Unsupported file format or failed to extract text.")
 
