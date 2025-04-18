@@ -1,7 +1,6 @@
 import streamlit as st
 import openai
-import json
-import fitz  # PyMuPDF for PDFs
+import fitz  # PyMuPDF
 import docx
 import os
 import re
@@ -10,7 +9,6 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # 1. AUTH & GOOGLE SHEETS SETUP
-
 PASSWORD = st.secrets["ACCESS_PASSWORD"]
 client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -21,7 +19,6 @@ SHEET_NAME = "Track Record Ratings"
 sheet = gc.open(SHEET_NAME).sheet1
 
 # 2. RUBRIC & CV EXTRACTION FUNCTIONS
-
 def load_rubric():
     with open("scoring_instructions.txt", "r", encoding="utf-8") as f:
         return f.read()
@@ -40,16 +37,14 @@ def extract_text(file):
         return "\n".join([para.text for para in doc.paragraphs])
     return None
 
-# 3. GPT SCORING
-
+# 3. GPT SCORING (word-based rating only)
 def rate_cv(cv_text, rubric_text, role):
     prompt = f"""
 You are an evaluator scoring a CV for a role at "{role}".
 
-You MUST evaluate the CV using the scoring rubric that was just provided in full above. Do not rely on any assumptions, and do not introduce criteria that are not present in the rubric. You must reference the rubric definitions for each category.
+You MUST evaluate the CV using the rubric that was just provided. DO NOT invent criteria not found in the rubric. Your goal is to return word-based ratings only, strictly using rubric-defined terms.
 
-Score the CV in the following **exact order**:
-
+Categories to score:
 1. Education  
 2. Industry experience  
 3. Range of experience  
@@ -57,23 +52,14 @@ Score the CV in the following **exact order**:
 5. Average length of stay at firms  
 6. Within firm alignment
 
-For each one, include:
-- A **numeric rating (1–5)** based ONLY on the rubric
-- A **word-based rating** that reflects the rubric scale
-- A **justification** that cites specific details from the CV in relation to the rubric
+For each category, return:
+- A **word-based rating** (e.g. low, moderate, sound, strong, exceptional, etc.)
+- A short justification
 
-After all six categories, provide:
+At the end, repeat only the 6 word-based ratings in order for parsing:
+**Ratings Recap**: Education = ..., Industry = ..., Range = ..., Benchmark = ..., Length = ..., Within = ...
 
-**Total Numeric Score: <sum>**
-
-Use this score conversion if needed:
-low/none = 0  
-moderate = 1  
-sound/single instance = 2  
-strong = 3  
-exceptional/thematic = 5
-
-Do not summarize, rephrase, or add any other commentary. Just follow the rubric exactly.
+Do not calculate numeric scores yourself.
 
 CV:
 \"\"\"{cv_text}\"\"\"
@@ -85,58 +71,36 @@ CV:
     response = client.chat.completions.create(model="gpt-4o", messages=messages, temperature=0.1)
     return response.choices[0].message.content
 
-def extract_gpt_scores(text):
-    categories = [
-        "Education", "Industry Experience", "Range of Experience",
-        "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
-    ]
-    scores = {f"GPT_{cat}": 0 for cat in categories}
-    current_cat = None
-
-    for line in text.splitlines():
-        for cat in categories:
-            if cat.lower() in line.lower():
-                current_cat = f"GPT_{cat}"
-                break
-        if "numeric rating" in line.lower() and current_cat:
-            match = re.search(r"(\d+)", line)
-            if match:
-                scores[current_cat] = int(match.group(1))
-                current_cat = None
-        elif "total" in line.lower() and "numeric" in line.lower():
-            match = re.search(r"(\d+)", line)
-            if match:
-                scores["GPT Score"] = int(match.group(1))
-    return scores
+def extract_gpt_word_ratings(text):
+    pattern = r"Ratings Recap:\s*Education\s*=\s*(\w+),\s*Industry\s*=\s*(\w+),\s*Range\s*=\s*(\w+),\s*Benchmark\s*=\s*(\w+),\s*Length\s*=\s*(\w+),\s*Within\s*=\s*(\w+)"
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match:
+        labels = ["Education", "Industry Experience", "Range of Experience",
+                  "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"]
+        values = list(match.groups())
+        return dict(zip(labels, values))
+    return {}
 
 # 4. STREAMLIT UI
-
 st.set_page_config(page_title="CV Rating App", page_icon="📄")
 st.title("🔒 CV Rating App (GPT-4o)")
 
-# Initialize session state
-if "gpt_scored" not in st.session_state:
-    st.session_state.gpt_scored = False
+# Session state for storing GPT results
 if "gpt_result" not in st.session_state:
     st.session_state.gpt_result = ""
-if "gpt_scores" not in st.session_state:
-    st.session_state.gpt_scores = {}
-if "gpt_score" not in st.session_state:
-    st.session_state.gpt_score = None
+if "gpt_ratings" not in st.session_state:
+    st.session_state.gpt_ratings = {}
 
 # Password protection
 if st.text_input("Enter password to access the app:", type="password") != PASSWORD:
     st.warning("Access restricted. Please enter the correct password.")
     st.stop()
 
-# Consultant inputs
 consultant = st.text_input("👤 Consultant Name")
 candidate = st.text_input("🧑 Candidate Name")
 role = st.text_input("📌 Role Being Considered For")
 company = st.text_input("🏢 Company Being Considered For")
 uploaded_file = st.file_uploader("📄 Upload CV (.txt, .pdf, or .docx)", type=["txt", "pdf", "docx"])
-
-cv_text = ""
 
 if uploaded_file and role:
     cv_text = extract_text(uploaded_file)
@@ -144,21 +108,20 @@ if uploaded_file and role:
         if st.button("Run GPT Scoring"):
             with st.spinner("Scoring with GPT..."):
                 rubric = load_rubric()
-                gpt_result = rate_cv(cv_text, rubric, role)
-                gpt_scores = extract_gpt_scores(gpt_result)
-                gpt_score = gpt_scores.get("GPT Score", 0)
-                st.session_state.gpt_result = gpt_result
-                st.session_state.gpt_scores = gpt_scores
-                st.session_state.gpt_score = gpt_score
-                st.session_state.gpt_scored = True
-                st.success("GPT scoring complete!")
-                st.markdown("### 🧐 GPT Rating")
-                st.markdown(gpt_result)
+                result = rate_cv(cv_text, rubric, role)
+                st.session_state.gpt_result = result
+                st.session_state.gpt_ratings = extract_gpt_word_ratings(result)
+                st.success("✅ GPT scoring complete!")
+
+        if st.session_state.gpt_result:
+            st.markdown("### 🧐 GPT Rating")
+            st.markdown(st.session_state.gpt_result)
 
         st.subheader("📝 Consultant Input")
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
             "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
+            "Industry Experience": st.selectbox("Industry Experience", ["low", "moderate", "sound", "strong"]),
             "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
             "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
             "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
@@ -176,9 +139,7 @@ if uploaded_file and role:
             "strong": 3, "exceptional": 5, "thematic": 5
         }
 
-        if not st.session_state.gpt_scored:
-            st.warning("⚠️ Please run GPT scoring first.")
-        else:
+        if st.session_state.gpt_ratings:
             if st.button("Calculate Total Score"):
                 consultant_score = 0
                 st.markdown("### 👤 Consultant Ratings")
@@ -186,25 +147,32 @@ if uploaded_file and role:
                     score = score_map.get(rating.lower(), 0)
                     if category in ["Regretted Career Choices", "Regretted Personal Choices"]:
                         consultant_score -= score
-                        st.markdown(f"- **{category}**: {rating.capitalize()} (−{score})")
+                        st.markdown(f"- **{category}**: {rating} (−{score})")
                     else:
                         consultant_score += score
-                        st.markdown(f"- **{category}**: {rating.capitalize()} (+{score})")
+                        st.markdown(f"- **{category}**: {rating} (+{score})")
 
-                gpt_score = st.session_state.gpt_score
-                gpt_scores = st.session_state.gpt_scores
+                # GPT scores (convert from word rating)
+                gpt_ratings = st.session_state.gpt_ratings
+                gpt_score = 0
+                st.markdown("### 🤖 GPT Converted Ratings")
+                for cat, rating in gpt_ratings.items():
+                    score = score_map.get(rating.lower(), 0)
+                    gpt_score += score
+                    st.markdown(f"- **{cat}**: {rating} → {score}")
+
                 total_score = consultant_score + gpt_score
-
                 st.markdown(f"### 🧮 Consultant Score: **{consultant_score}**")
                 st.markdown(f"### 🤖 GPT Score: **{gpt_score}**")
-                st.markdown(f"### ✅ Total Score: {total_score}")
+                st.markdown(f"### ✅ Total Score: **{total_score}**")
                 st.markdown("### 📊 Benchmark Score: 22")
 
-                consultant_scores = [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
-                gpt_scores_ordered = [gpt_scores.get(f"GPT_{cat}", 0) for cat in [
+                # Save results to Google Sheet
+                gpt_scores_ordered = [score_map.get(gpt_ratings.get(cat, "").lower(), 0) for cat in [
                     "Education", "Industry Experience", "Range of Experience",
                     "Benchmark of Career Exposure", "Average Length of Stay at Firms", "Within Firm"
                 ]]
+                consultant_scores = [score_map.get(consultant_inputs[cat].lower(), 0) for cat in consultant_inputs]
 
                 extended_row = [
                     datetime.now().isoformat(),
