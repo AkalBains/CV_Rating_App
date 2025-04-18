@@ -159,7 +159,6 @@ if uploaded_file and role:
         consultant_inputs = {
             "Extracurricular Activities": st.selectbox("Extracurricular Activities", ["low", "moderate", "sound", "strong", "exceptional"]),
             "Challenges in Starting Base": st.selectbox("Challenges in Starting Base", ["low", "moderate", "notable", "strong", "exceptional"]),
-            "Industry Experience": st.selectbox("Industry Experience", ["low", "moderate", "sound", "strong"]),
             "Level of Experience": st.selectbox("Level of Experience", ["low", "moderate", "sound", "strong"]),
             "Geographic Experience": st.selectbox("Geographic Experience", ["low", "moderate", "sound", "strong"]),
             "Speed of Career Progression": st.selectbox("Speed of Career Progression", ["low", "moderate", "strong", "exceptional"]),
@@ -219,4 +218,3 @@ if uploaded_file and role:
                 ] + gpt_scores_ordered + consultant_scores
 
                 sheet.append_row(extended_row)
-
